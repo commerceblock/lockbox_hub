@@ -1,0 +1,3 @@
+#![feature(stdsimd)]
+[workspace]
+members = ["hub", "client", "shared"]
