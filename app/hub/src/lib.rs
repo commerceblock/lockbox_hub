@@ -144,11 +144,12 @@ where
         }
         Err(e) => return Err(HubError::from(e)),
     };
+    
     match serde_json::from_str(value.as_str()) {
-	Ok(r) => Ok(r),
-	Err(e) => {
-	    Err(HubError::Generic(format!("Error derserialising POST response: {}: {}", value.as_str(), e)))
-	}
+	    Ok(r) => Ok(r),
+	    Err(e) => {
+	        Err(HubError::Generic(format!("Error derserialising POST response: {}: {}", value.as_str(), e)))
+	    }
     }
 }
 

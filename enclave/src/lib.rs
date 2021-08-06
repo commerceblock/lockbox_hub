@@ -365,7 +365,10 @@ fn proc_msg1_safe(dh_msg1_str: *const u8 , msg1_len: usize,
     
     
     let status = match INITIATOR.lock() {
-	    Ok(mut r) => r.proc_msg1(&dh_msg1, &mut dh_msg2_inner),
+	    Ok(mut r) => {
+            *r = SgxDhInitiator::init_session(); 
+            r.proc_msg1(&dh_msg1, &mut dh_msg2_inner)
+        },
 	    Err(_) => return ATTESTATION_STATUS::ATTESTATION_ERROR
     };
 
@@ -422,7 +425,15 @@ fn internal_set_random_ec_key() -> SgxResult<()> {
 
     let mut sgx_key = sgx_align_key_128bit_t::default();
     rand.fill_bytes(&mut sgx_key.key);
-    Ok(())
+
+    match ECKEY.lock(){
+        Ok(mut k) => {
+            *k = sgx_key;
+            println!("internal set random ec key: {:?}", &k.key);
+            Ok(())
+        },
+        Err(_) => Err(sgx_status_t::SGX_ERROR_INVALID_PARAMETER)
+    }   
 }
 
 fn internal_set_ec_key(val: sgx_align_key_128bit_t) -> SgxResult<()> {
@@ -443,9 +454,6 @@ fn internal_set_session_key(val: sgx_align_key_128bit_t) -> SgxResult<()> {
     match SESSIONKEY.lock() {
         Ok(mut key) => {
             let default = sgx_align_key_128bit_t::default();
-            if key.key != default.key {
-                return Err(sgx_status_t::SGX_ERROR_INVALID_PARAMETER);
-            }
             *key = val;
             Ok(())
         },
@@ -456,7 +464,6 @@ fn internal_set_session_key(val: sgx_align_key_128bit_t) -> SgxResult<()> {
 fn proc_msg3_safe(dh_msg3_str: *const u8 , msg3_len: usize, sealed_log:  * mut u8) -> ATTESTATION_STATUS {
 
     let str_slice = unsafe { slice::from_raw_parts(dh_msg3_str, msg3_len) };
-    println!("str_slice: {:?}", &str_slice);
     let mut dh_msg3_raw = match std::str::from_utf8(&str_slice) {
         Ok(v) =>{
             match serde_json::from_str::<DHMsg3>(v){
@@ -466,71 +473,47 @@ fn proc_msg3_safe(dh_msg3_str: *const u8 , msg3_len: usize, sealed_log:  * mut u
         },
         Err(_) => return ATTESTATION_STATUS::INVALID_SESSION
     };
-    println!("dhmsg3_raw");
+    
     let mut dh_aek: sgx_align_key_128bit_t = sgx_align_key_128bit_t::default(); // Session Key
-    println!("dh_aek");    
     let mut responder_identity: sgx_dh_session_enclave_identity_t = sgx_dh_session_enclave_identity_t::default();
-    println!("responder_identity");    
-
     let dh_msg3_raw_len = mem::size_of::<sgx_dh_msg3_t>() as u32 + dh_msg3_raw.msg3_body.additional_prop_length;
     let dh_msg3 = unsafe{ SgxDhMsg3::from_raw_dh_msg3_t(&mut dh_msg3_raw, dh_msg3_raw_len ) };
-    println!("dh_msg3");    
+    
     if dh_msg3.is_none() {
         return ATTESTATION_STATUS::ATTESTATION_SE_ERROR;
     }
     let dh_msg3 = dh_msg3.unwrap();
     
-    println!("r.proc_msg3");    
     let status = match INITIATOR.lock() {
 	    Ok(mut r) => r.proc_msg3(&dh_msg3, &mut dh_aek.key, &mut responder_identity),
 	    Err(_) => return ATTESTATION_STATUS::ATTESTATION_ERROR,
     };
-    println!("status: {:?}", &status);    
     
     if status.is_err() {
         return ATTESTATION_STATUS::ATTESTATION_ERROR;
-    }
-
-    /*
-    let cb = get_callback();
-    if cb.is_some() {
-        let ret = (cb.unwrap().verify)(&responder_identity);
-        if ret != ATTESTATION_STATUS::SUCCESS as u32{
-            return ATTESTATION_STATUS::INVALID_SESSION;
-        }
-    }
-     */
-    
+    }    
 
     let key_sealed  = SgxKey128BitSealed {
 	    inner: dh_aek.key
     };
 
-    println!("key_sealed: {:?}", &key_sealed);    
-    
     let sealable = match SgxSealable::try_from(key_sealed){
 	    Ok(x) => x,
         Err(_) => return ATTESTATION_STATUS::ATTESTATION_ERROR
     };
 
-    println!("sealable: {:?}", &sealable);    
-
     let sealed_data = match sealable.to_sealed(){
         Ok(x) => x,
 	Err(_) => return ATTESTATION_STATUS::ATTESTATION_ERROR
     };
-    println!("sealed_data");    
-    
+        
     let opt = to_sealed_log_for_slice(&sealed_data, sealed_log, EC_LOG_SIZE as u32);
-    println!("opt: {:?}", &opt);    
     if opt.is_none() {
 	    return ATTESTATION_STATUS::ATTESTATION_ERROR;
     }
 
-    println!("internal_set_session_key: ");    
     match internal_set_session_key(dh_aek){
         Ok(_) => {
-            println!("internal_set_session_key success.");    
             ATTESTATION_STATUS::SUCCESS
         },
         Err(_) => ATTESTATION_STATUS::INVALID_SESSION
@@ -543,14 +526,13 @@ fn proc_msg3_safe(dh_msg3_str: *const u8 , msg3_len: usize, sealed_log:  * mut u
 pub extern "C" fn proc_msg3(dh_msg3_str: *const u8 , msg3_len: usize, sealed_log:  * mut u8)
 				  -> ATTESTATION_STATUS {
     let result = proc_msg3_safe(dh_msg3_str, msg3_len, sealed_log);
-    println!("finished proc_msg3_safe");
     result
 }
 
 #[allow(unused_variables)]
 fn exchange_report_safe(src_enclave_id: sgx_enclave_id_t,
 			dh_msg2_str: *const u8 , msg2_len: usize,
-			dh_msg3_arr: &mut [u8;1600],
+			dh_msg3_arr: &mut [u8;1700],
 			sealed_log: *mut u8
 //			session_info: &mut DhSessionInfo
 ) -> ATTESTATION_STATUS {
@@ -606,7 +588,7 @@ fn exchange_report_safe(src_enclave_id: sgx_enclave_id_t,
 	    v_sized=format!("{}{}", v_sized.len(), v_sized);
 	    v_sized.push_str(&v);
 	    let mut v_bytes=v_sized.into_bytes();
-	    v_bytes.resize(1600,0);
+	    v_bytes.resize(1700,0);
 	    *dh_msg3_arr = v_bytes.as_slice().try_into().unwrap();
 	},
 	Err(e) => {
@@ -654,7 +636,7 @@ fn exchange_report_safe(src_enclave_id: sgx_enclave_id_t,
 #[no_mangle]
 pub extern "C" fn exchange_report(src_enclave_id: sgx_enclave_id_t,
 				  dh_msg2_str: *const u8, msg2_len: usize,
-				  dh_msg3_arr: &mut [u8;1600],
+				  dh_msg3_arr: &mut [u8;1700],
 				  sealed_log: *mut u8,
 	//,
 	//			  session_ptr: *mut usize
@@ -812,7 +794,6 @@ impl EncryptedData {
     
 	let mut enc_data = Self::new();
 	enc_data.payload_data.encrypt = vec![0_u8; encrypt_text.len()].into_boxed_slice();
-    println!("encrypt...");
 	let error = rsgx_rijndael128GCM_encrypt(
             &encrypt_key.key,
             encrypt_text,
@@ -822,16 +803,12 @@ impl EncryptedData {
             &mut enc_data.payload_data.payload_tag,
 	);
 	if error.is_err() {
-            println!("encrypt error...");
             return Err(error.unwrap_err());
 	}
-	println!("get payload size...");
 	enc_data.payload_data.payload_size = (encrypt_text.len() + additional_text.len()) as u32;
 	if !additional_text.is_empty() {
-            println!("get payload size...");
             enc_data.payload_data.additional = additional_text.to_vec().into_boxed_slice();
 	}
-	println!("finished encrypted data from");
 	Ok(enc_data)
     }
     
@@ -857,7 +834,7 @@ impl EncryptedData {
             &mut unsealed_data.decrypt,
         );
         if error.is_err() {
-	        println!("unencrypt error: {}", error.unwrap_err());
+	        println!("error: {:?}", error.unwrap_err());
             return Err(error.unwrap_err());
         }
 
@@ -1492,51 +1469,41 @@ pub extern "C" fn test_sc_encrypt_unencrypt() -> sgx_status_t {
 
 #[no_mangle]
 pub extern "C" fn get_session_enclave_key(sealed_log_out: *mut u8) -> sgx_status_t {
-    println!("ECKEY...");
     match ECKEY.lock() {
-        Ok(k) => {
-            
-            println!("session encrypt - key to key_vec - k.key: {:?}", &k.key);
-/*
+        Ok(k) => {        
+            //let key_sealed  = SgxKey128BitSealed {
+            //    inner: k.key.clone()
+            //};
+
             let key_vec = match serde_cbor::to_vec(&k.key){
                 Ok(r) => r,
                 Err(e) => {
-                    println!("{}", e);
+                    println!("error: {:?}", e);
                     return sgx_status_t::SGX_ERROR_INVALID_PARAMETER
                 },
             };
 
-            println!("session encrypt - key_vec: {:?}", &key_vec);
-            
             match session_encrypt(&key_vec){
                 Ok(ed) => {
-                    println!("to encrypted log for slice - encrypted data: {:?}", &ed);
-                    let mut test_output : EcLog = [0u8;EC_LOG_SIZE];
-                    let opt = to_encrypted_log_for_slice(&ed, test_output.as_ptr() as * mut u8, EC_LOG_SIZE as u32);
-                    println!("sealed log: {:?}", test_output);
+                    let opt = to_encrypted_log_for_slice(&ed, sealed_log_out, EC_LOG_SIZE as u32);
                     if opt.is_none() {
                         return sgx_status_t::SGX_ERROR_INVALID_PARAMETER
                     }
-                    println!("finished get_session_enclave_key");
-                    sgx_status_t::SGX_SUCCESS
+                    return sgx_status_t::SGX_SUCCESS
                 },
                 Err(e) => {
-                    println!("error encrypting - {}", e);
-                    sgx_status_t::SGX_ERROR_INVALID_PARAMETER
+                    return sgx_status_t::SGX_ERROR_INVALID_PARAMETER
                 },
             }
-            */  
 
-            println!("session encrypt - finished");
             sgx_status_t::SGX_SUCCESS
         },
         Err(e) => {
-            println!("ECKEY error: {}", e);
+            println!("error: {:?}", e);
             sgx_status_t::SGX_ERROR_INVALID_PARAMETER
         }
         
     }
-
 }
 
 fn encrypt(encrypt: &[u8]) -> SgxResult<EncryptedData> {
@@ -1545,7 +1512,7 @@ fn encrypt(encrypt: &[u8]) -> SgxResult<EncryptedData> {
 	    EncryptedData::try_from(&[], encrypt, &[0;12], &mut k)
 	},
 	Err(e) => {
-	    println!("ECKEY error: {}", e);
+	    println!("error: {:?}", e);
 	    Err(sgx_status_t::SGX_ERROR_INVALID_PARAMETER)
 	}
     }
@@ -1563,14 +1530,12 @@ fn unencrypt(encrypt: &EncryptedData) -> SgxResult<UnencryptedData> {
 }
 
 fn session_encrypt(encrypt: &[u8]) -> SgxResult<EncryptedData> {
-    println!("get session key...");
     match SESSIONKEY.lock() {
 	    Ok(mut k) => {
-            println!("get encrypted data from session key...");
 	        EncryptedData::try_from(&[], encrypt, &[0;12], &mut k)
 	    },
 	    Err(e) => {
-	        println!("ECKEY error: {}", e);
+	        println!("error: {:?}", e);
 	        Err(sgx_status_t::SGX_ERROR_INVALID_PARAMETER)
 	    }
     }
@@ -1624,7 +1589,7 @@ pub extern "C" fn test_in_to_decrypt(data_in: *const u8, data_len: usize) -> sgx
 	    }
 	},
 	Err(e) => {
-	    println!("unencrypt error: {:?}", e);
+	    println!("error: {:?}", e);
 	    sgx_status_t::SGX_ERROR_INVALID_PARAMETER
 	}
     }

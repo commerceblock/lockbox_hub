@@ -114,15 +114,13 @@ impl Enclave {
 	pub fn get_session_enclave_key(&self) -> Result<EcLog> {
 		let mut enclave_ret = sgx_status_t::SGX_SUCCESS;
 		let sealed_log = [0u8; 8192];
-		dbg!("app get session enclave key - calling enclave");
 		let _result = unsafe {
 			get_session_enclave_key(self.geteid(), &mut enclave_ret, sealed_log.as_ptr() as * mut u8)
 		};
-		dbg!("app get session enclave key - finished calling enclave");
 
 		match enclave_ret {
 	    	sgx_status_t::SGX_SUCCESS => {
-				Ok([0u8; 8192])
+				Ok(sealed_log)
 			},
        	    _ => Err(HubError::Generic(format!("[-] ECALL Enclave Failed {}!", enclave_ret.as_str())).into())
 		}
@@ -182,7 +180,7 @@ impl Enclave {
 
     pub fn session_request(&self, id_msg: &EnclaveIDMsg) -> Result<DHMsg1> {
 		let mut retval = sgx_status_t::SGX_SUCCESS;
-		let mut dh_msg1 = [0u8;1600];
+		let mut dh_msg1 = [0u8;1700];
 
 		//	let mut session_ptr: usize = 0;
 		let src_enclave_id = id_msg.inner;
@@ -221,7 +219,7 @@ impl Enclave {
 		let mut retval = sgx_status_t::SGX_SUCCESS;
 		let sealed_log = [0u8; 8192];
 
-		let mut dh_msg3_arr = [0u8;1600];
+		let mut dh_msg3_arr = [0u8;1700];
 		let src_enclave_id = ep_msg.src_enclave_id;
 		let dh_msg2_str = serde_json::to_string(&ep_msg.dh_msg2).unwrap();
 		

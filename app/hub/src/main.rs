@@ -4,7 +4,9 @@ extern crate shared_lib;
 extern crate log;
 use hub_lib::{Client, post};
 use log::{info, warn};
-use url::Url;
+use std::{thread, time};
+
+
 
 use shared_lib::structs::{EnclaveIDMsg, DHMsg1, DHMsg2, DHMsg3, 
     ExchangeReportMsg, SetSessionEnclaveKeyMsg};
@@ -16,11 +18,14 @@ use crate::hub_lib::Result;
 
 
 fn main() {
+   env_logger::init();
+
    let mut hub = Hub::init();
    
    let urls = hub.config.client.get_urls().unwrap();
    
    for url in &urls {
+        info!("Initializing lockbox enclave: {}", &url);
         match init_enclave(&mut hub, &Client::new(url)){
             Ok(_) => info!("Initialized lockbox enclave: {}", &url),
             Err(e) => warn!("Failed to initialize lockbox enclave: {} - {}", &url, &e)
@@ -29,50 +34,57 @@ fn main() {
 }
 
 fn init_enclave(hub: &mut Hub, lockbox: &Client) -> Result<()> {
+
+    let one_second = time::Duration::from_millis(1000);
+    let five_seconds = time::Duration::from_millis(5000);
     
-    println!("...getting src enclave id...\n");
+    thread::sleep(five_seconds);
+
+    info!("...getting src enclave id...\n");
     let enclave_id_msg: EnclaveIDMsg = hub.enclave_id();
 
-    println!("hub enclave id: {:?}", enclave_id_msg);
+    info!("hub enclave id: {:?}", enclave_id_msg);
    
     
-    println!("...requesting session with dst...\n");
+    info!("...requesting session...\n");
     let dhmsg1: DHMsg1 = post(lockbox, "attestation/session_request", &enclave_id_msg)?;
+    thread::sleep(one_second);
 
-    println!("...proc_msg1...\n");
+    info!("...proc_msg1...\n");
     let dh_msg2: DHMsg2 = hub.proc_msg1(&dhmsg1)?;
-    
-    //post(&hub_url, "attestation/proc_msg1", &dhmsg1).unwrap();
+
     
     let rep_msg = ExchangeReportMsg {
 	    src_enclave_id: enclave_id_msg.inner,
 	    dh_msg2,
     };
     
-    println!("...exchange_report...\n");
+    info!("...exchange_report...\n");
     let dh_msg3: DHMsg3 = post(lockbox, "attestation/exchange_report", &rep_msg)?;
+    thread::sleep(one_second);
 
 
-    dbg!(serde_json::ser::to_string(&dh_msg3).unwrap());
-
-    println!("...proc_msg3...\n");
+    info!("...proc_msg3...\n");
     let _key_msg = hub.proc_msg3(&dh_msg3)?;
 
-    println!("...get_session_enclave_key...\n");
+    
+    info!("...get_session_enclave_key...\n");
 
     let sess_ec = hub.get_session_enclave_key()?;
 
-    println!("...got_session_enclave_key: {:?}\n", &sess_ec);
+    info!("...got_session_enclave_key...\n");
 
     let session_ec_key_msg = SetSessionEnclaveKeyMsg {
         data: sess_ec
     };
 
-    println!("...posting set_session_enclave_key\n");
+    info!("...posting set_session_enclave_key\n");
 
-    post(lockbox, "attestation/set_session_enclave_key", &session_ec_key_msg)?;
+    let _result: () = post(lockbox, "attestation/set_session_enclave_key", &session_ec_key_msg)?;
 
-    println!("...init_shared completed.\n");
+    thread::sleep(one_second);
 
+    info!("...init_shared completed.\n");
+    
     Ok(())
 }

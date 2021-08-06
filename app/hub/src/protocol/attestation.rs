@@ -29,7 +29,6 @@ pub trait Attestation {
 
 impl Attestation for Hub{
     fn end_session(&self) -> Result<()> {
-		println!("doing end session");
 		Ok(())
     }
 
@@ -53,11 +52,9 @@ impl Attestation for Hub{
 
     fn get_enclave_key(&mut self, db_key: &Key) -> Result<[u8; 8192]> {
 		let cf = &self.key_database.cf_handle("enclave_key").ok_or(HubError::Generic(String::from("expected database handle \"enclave_key\" to exist")))?;
-		dbg!("getting key from database");
 		match self.key_database.get_cf(cf, db_key){
 	    	Ok(Some(x)) => match x.try_into() {
 				Ok(x) => {
-					dbg!("setting key in enclave");
 		    		self.enclave.set_ec_key(Some(x));
 		    		match self.enclave.set_ec_key_enclave(x){
 						Ok(_) => match self.enclave.get_ec_key(){
@@ -70,18 +67,13 @@ impl Attestation for Hub{
 				Err(e) => return Err(HubError::Generic(format!("sealed enclave key format error: {:?}", e))),
 	    	},
 	    	Ok(None) => {
-				dbg!("setting a random ec key");
 				//set a random ec key
 				self.enclave.set_random_ec_key().map_err(|e| HubError::Generic(format!("Error setting enclave key: {}", e)))?;
-				dbg!("getting ec key");
 				let ec_key = *self.enclave.get_ec_key();
 				match ec_key {
 					Some(ec_key) => {
-						dbg!("setting ec key");
 						self.enclave.set_ec_key(Some(ec_key.clone()));
-						dbg!("putting ec key");
 						self.put_enclave_key(&db_key, ec_key)?;
-						dbg!("putting ec key - ok");
 						Ok(ec_key)
 					},
 					None => Err(HubError::Generic(String::from("expected some enclave key, got None"))),
