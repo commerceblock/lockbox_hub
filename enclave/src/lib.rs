@@ -429,7 +429,6 @@ fn internal_set_random_ec_key() -> SgxResult<()> {
     match ECKEY.lock(){
         Ok(mut k) => {
             *k = sgx_key;
-            println!("internal set random ec key: {:?}", &k.key);
             Ok(())
         },
         Err(_) => Err(sgx_status_t::SGX_ERROR_INVALID_PARAMETER)
