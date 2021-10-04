@@ -75,6 +75,9 @@ pub type EcLog = [u8; EC_LOG_SIZE];
 pub const EC_LOG_SIZE_LG: usize = 32400;
 pub type EcLogLg = [u8; EC_LOG_SIZE_LG];
 
+pub const DH_MSG_SIZE: usize = 1700;
+pub const DH_MSG3_SIZE: usize = 2000;
+
 //Using lazy_static in order to be able to use a heap-allocated
 //static variable requiring runtime executed code
 lazy_static!{
@@ -344,7 +347,7 @@ impl Bytes32 {
 }
 
 fn proc_msg1_safe(dh_msg1_str: *const u8 , msg1_len: usize,
-		  dh_msg2: &mut [u8;1700]
+		  dh_msg2: &mut [u8;DH_MSG3_SIZE]
 ) -> ATTESTATION_STATUS {
     
     let str_slice = unsafe { slice::from_raw_parts(dh_msg1_str, msg1_len) };
@@ -388,7 +391,7 @@ fn proc_msg1_safe(dh_msg1_str: *const u8 , msg1_len: usize,
     
 	    let mut v_bytes=v_sized.into_bytes();
     
-	    v_bytes.resize(1700,0);
+	    v_bytes.resize(DH_MSG3_SIZE,0);
     
 	    *dh_msg2 = v_bytes.as_slice().try_into().unwrap();
 	},
@@ -403,7 +406,7 @@ fn proc_msg1_safe(dh_msg1_str: *const u8 , msg1_len: usize,
 //Handle the request from Source Enclave for a session
 #[no_mangle]
 pub extern "C" fn proc_msg1(dh_msg1_str: *const u8 , msg1_len: usize,
-                           dh_msg2: &mut [u8;1700])
+                           dh_msg2: &mut [u8;DH_MSG3_SIZE])
 				  -> ATTESTATION_STATUS {
 
     proc_msg1_safe(dh_msg1_str, msg1_len, dh_msg2)
@@ -531,7 +534,7 @@ pub extern "C" fn proc_msg3(dh_msg3_str: *const u8 , msg3_len: usize, sealed_log
 #[allow(unused_variables)]
 fn exchange_report_safe(src_enclave_id: sgx_enclave_id_t,
 			dh_msg2_str: *const u8 , msg2_len: usize,
-			dh_msg3_arr: &mut [u8;1700],
+			dh_msg3_arr: &mut [u8;DH_MSG3_SIZE],
 			sealed_log: *mut u8
 //			session_info: &mut DhSessionInfo
 ) -> ATTESTATION_STATUS {
@@ -587,7 +590,7 @@ fn exchange_report_safe(src_enclave_id: sgx_enclave_id_t,
 	    v_sized=format!("{}{}", v_sized.len(), v_sized);
 	    v_sized.push_str(&v);
 	    let mut v_bytes=v_sized.into_bytes();
-	    v_bytes.resize(1700,0);
+	    v_bytes.resize(DH_MSG3_SIZE,0);
 	    *dh_msg3_arr = v_bytes.as_slice().try_into().unwrap();
 	},
 	Err(e) => {
@@ -635,7 +638,7 @@ fn exchange_report_safe(src_enclave_id: sgx_enclave_id_t,
 #[no_mangle]
 pub extern "C" fn exchange_report(src_enclave_id: sgx_enclave_id_t,
 				  dh_msg2_str: *const u8, msg2_len: usize,
-				  dh_msg3_arr: &mut [u8;1700],
+				  dh_msg3_arr: &mut [u8;DH_MSG3_SIZE],
 				  sealed_log: *mut u8,
 	//,
 	//			  session_ptr: *mut usize
