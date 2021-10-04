@@ -20,6 +20,9 @@ pub type EcKeySealed = [u8; EC_KEY_SEALED_SIZE];
 pub const EC_LOG_SIZE: usize = 8192;
 pub type EcLog = [u8; EC_LOG_SIZE];
 
+pub const DH_MSG_SIZE: usize = 1700;
+pub const DH_MSG3_SIZE: usize = 2000;
+
 pub struct Enclave {
     inner: SgxEnclave,
     ec_key: Option<EcLog>
@@ -180,7 +183,7 @@ impl Enclave {
 
     pub fn session_request(&self, id_msg: &EnclaveIDMsg) -> Result<DHMsg1> {
 		let mut retval = sgx_status_t::SGX_SUCCESS;
-		let mut dh_msg1 = [0u8;1700];
+		let mut dh_msg1 = [0u8;DH_MSG_SIZE];
 
 		//	let mut session_ptr: usize = 0;
 		let src_enclave_id = id_msg.inner;
@@ -219,7 +222,7 @@ impl Enclave {
 		let mut retval = sgx_status_t::SGX_SUCCESS;
 		let sealed_log = [0u8; 8192];
 
-		let mut dh_msg3_arr = [0u8;1700];
+		let mut dh_msg3_arr = [0u8;DH_MSG3_SIZE];
 		let src_enclave_id = ep_msg.src_enclave_id;
 		let dh_msg2_str = serde_json::to_string(&ep_msg.dh_msg2).unwrap();
 		
