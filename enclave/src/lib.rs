@@ -75,7 +75,7 @@ pub type EcLog = [u8; EC_LOG_SIZE];
 pub const EC_LOG_SIZE_LG: usize = 32400;
 pub type EcLogLg = [u8; EC_LOG_SIZE_LG];
 
-pub const DH_MSG_SIZE: usize = 1700;
+pub const DH_MSG_SIZE: usize = 1800;
 pub const DH_MSG3_SIZE: usize = 2000;
 
 //Using lazy_static in order to be able to use a heap-allocated
@@ -347,7 +347,7 @@ impl Bytes32 {
 }
 
 fn proc_msg1_safe(dh_msg1_str: *const u8 , msg1_len: usize,
-		  dh_msg2: &mut [u8;DH_MSG3_SIZE]
+		  dh_msg2: &mut [u8;DH_MSG_SIZE]
 ) -> ATTESTATION_STATUS {
     
     let str_slice = unsafe { slice::from_raw_parts(dh_msg1_str, msg1_len) };
@@ -391,7 +391,7 @@ fn proc_msg1_safe(dh_msg1_str: *const u8 , msg1_len: usize,
     
 	    let mut v_bytes=v_sized.into_bytes();
     
-	    v_bytes.resize(DH_MSG3_SIZE,0);
+	    v_bytes.resize(DH_MSG_SIZE,0);
     
 	    *dh_msg2 = v_bytes.as_slice().try_into().unwrap();
 	},
@@ -406,7 +406,7 @@ fn proc_msg1_safe(dh_msg1_str: *const u8 , msg1_len: usize,
 //Handle the request from Source Enclave for a session
 #[no_mangle]
 pub extern "C" fn proc_msg1(dh_msg1_str: *const u8 , msg1_len: usize,
-                           dh_msg2: &mut [u8;DH_MSG3_SIZE])
+                           dh_msg2: &mut [u8;DH_MSG_SIZE])
 				  -> ATTESTATION_STATUS {
 
     proc_msg1_safe(dh_msg1_str, msg1_len, dh_msg2)
