@@ -29,7 +29,8 @@ extern crate sgx_tse;
 extern crate sgx_tdh;
 extern crate sgx_trts;
 use sgx_tdh::{SgxDhMsg2, SgxDhMsg3, SgxDhInitiator, SgxDhResponder};
-use sgx_trts::trts::{rsgx_raw_is_outside_enclave, rsgx_lfence, rsgx_raw_is_within_enclave};
+use sgx_trts::trts::{rsgx_raw_is_outside_enclave, rsgx_lfence, 
+    rsgx_raw_is_within_enclave};
 #[cfg(not(target_env = "sgx"))]
 #[macro_use]
 extern crate sgx_tstd as std;
@@ -65,6 +66,17 @@ use attestation::err::*;
 use std::boxed::Box;
 use lazy_static::lazy_static;
 use std::sync::SgxMutex as Mutex;
+
+use sgx_tcrypto::*;
+use sgx_trts::memeq::ConsttimeMemEq;
+use sgx_trts::trts::*;
+use sgx_tse::*;
+use sgx_types::*;
+
+const AES_CMAC_KDF_ID: [u8; 2] = [1, 0];
+
+pub const SGX_DH_MAC_SIZE: size_t           = 16;
+
 #[macro_use]
 extern crate serde_derive;
 extern crate serde_cbor;
@@ -380,11 +392,12 @@ fn proc_msg1_safe(dh_msg1_str: *const u8 , msg1_len: usize,
         return ATTESTATION_STATUS::ATTESTATION_ERROR;
     }
 
-    
+    let dh_msg2_bytes;
     match serde_json::to_string(& DHMsg2 { inner: dh_msg2_inner } ) {
 	Ok(v) => {
+        dh_msg2_bytes=v.clone().into_bytes();
 	    let len = v.len();
-    
+        
 	    let mut v_sized=format!("{}", len);
 	    v_sized=format!("{}{}", v_sized.len(), v_sized);
 	    v_sized.push_str(&v);
@@ -398,6 +411,27 @@ fn proc_msg1_safe(dh_msg1_str: *const u8 , msg1_len: usize,
 	Err(_) => return ATTESTATION_STATUS::INVALID_SESSION
     };
 
+    //Verify msg2 serialization
+    match std::str::from_utf8(&dh_msg2_bytes) {
+        Ok(v) =>{
+            match serde_json::from_str::<DHMsg2>(v){
+                Ok(v) => {
+                    match v.inner.g_b.gx == dh_msg2_inner.g_b.gx {
+                        true => println!("msg2.g_b.gx ser. ok"),
+                        false => println!("msg2.g_b.gx ser. not ok"),
+                    }
+                    match v.inner.g_b.gy == dh_msg2_inner.g_b.gy {
+                        true => println!("msg2.g_b.gy ser. ok"),
+                        false => println!("msg2.g_b.gy ser. not ok"),
+                    }
+                },
+                Err(_) => {
+                    println!("msg2 ser. check failed");
+                }
+            }
+        },
+        Err(_) => println!("msg2 str from utf8 failed"),
+    };
     
     ATTESTATION_STATUS::SUCCESS
 }
